@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <string.h>
+#include <fcntl.h>
 
 #include <unistd.h>
 #include <sys/wait.h>
@@ -36,12 +37,14 @@ int main(int argc, char *argv[]) {
     }
 
     MAX_PROC_COUNT = atoi(argv[2]);
-    if (MAX_PROC_COUNT == 0)
+    if (MAX_PROC_COUNT == 0) {
         print_error(script_name, "Invalid MAX_PROC_COUNT value", NULL);
+        return EXIT_FAILURE;
+    }
 
     process(dir_name);
 
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 
@@ -111,20 +114,33 @@ void process(char *dir_name) {
             }
             else if ( S_ISREG(st.st_mode) ) {
 
-                if (proc_count == MAX_PROC_COUNT) {
-                    wait(&status);
+                while (proc_count >= MAX_PROC_COUNT) {
+                    int status;
+                    pid_t chpid;
+
+                    if ( (chpid = wait(&status) ) != 0) {
+                        --proc_count;
+                    }
                 }
 
                 pid_t pid = fork();
                 if (pid == 0) {
-                    int bytes_count = 0, words_count = 0;
 
+                    int bytes_count = 0, words_count = 0;
                     words_count = count_words(curr_name, &bytes_count);
-                    printf("%d %s %d %d", getpid(), curr_name, bytes_count, words_count);
+
+                    if (words_count == -1) {
+                        exit(EXIT_FAILURE);
+                    }
+
+                    printf("%d %s %d %d\n", getpid(), curr_name, bytes_count, words_count);
+                    exit(EXIT_SUCCESS);
                 }
-                else if (pid == -1) {
+                else if (pid < 0) {
                     print_error(script_name, "Error while forking", NULL);
                 }
+
+                proc_count++;   // parent process
 
             }   // S_ISREG
 
@@ -144,6 +160,53 @@ void process(char *dir_name) {
     return;
 }
 
+
+typedef enum state_t {
+    ST_OUT = 0,
+    ST_IN_WORD = 1
+} state_t;
+
+
+int is_separator(char c) {
+    static const char SEPARATORS[] = " \n\t";
+    return !(strchr(SEPARATORS, c) == NULL);
+}
+
+
 int count_words(char *curr_name, int *bytes_count) {
-    return 42;
+    int fd = open(curr_name,  O_RDONLY);
+
+    if (fd == -1) {
+        print_error(script_name, "Error while opening file ", curr_name);
+        return -1;
+    }
+
+    int result = 0;
+    *bytes_count = 0;
+
+    state_t st = ST_OUT;
+
+    char c = 0;
+    while (read(fd, &c, sizeof(char) ) != 0) {
+        if (!is_separator(c) ) {
+
+            if (st == ST_OUT) {
+                st = ST_IN_WORD;
+                ++result;
+            }
+        }
+        else {
+
+            st = ST_OUT;
+        }
+
+        ++(*bytes_count);
+    }
+
+    if (close(fd) == -1) {
+        print_error(script_name, "Error while closing file ", curr_name);
+        return -1;
+    }
+
+    return result;
 }
