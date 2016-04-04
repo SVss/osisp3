@@ -17,10 +17,12 @@
 
 char *script_name = NULL;
 int MAX_PROC_COUNT = 0;
+int status = 0;
 
 
 void print_error(const char *s_name, const char *msg, const char *f_name);
 void process(char *dir_name);
+
 
 int main(int argc, char *argv[]) {
     script_name = basename(argv[0]);
@@ -44,6 +46,8 @@ int main(int argc, char *argv[]) {
 
     process(dir_name);
 
+    while (wait(&status) != -1) { }
+
     return EXIT_SUCCESS;
 }
 
@@ -54,7 +58,6 @@ void print_error(const char *s_name, const char *msg, const char *f_name) {
 
 
 int proc_count = 0;
-int status = 0;
 
 int count_words(char *curr_name, int *bytes_count);
 
@@ -114,11 +117,10 @@ void process(char *dir_name) {
             }
             else if ( S_ISREG(st.st_mode) ) {
 
-                while (proc_count >= MAX_PROC_COUNT) {
+                if (proc_count >= MAX_PROC_COUNT) {
                     int status;
-                    pid_t chpid;
 
-                    if ( (chpid = wait(&status) ) != 0) {
+                    if (wait(&status) != 0) {
                         --proc_count;
                     }
                 }
